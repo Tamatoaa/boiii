@@ -1,4 +1,4 @@
-name: Build
+name: Build and Release
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
           - Release
     steps:
       - name: Check out files
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v2.4.2
         with:
           submodules: true
           fetch-depth: 0
@@ -45,7 +45,7 @@ jobs:
         run: msbuild /m /v:minimal /p:Configuration=${{matrix.configuration}} /p:Platform=x64 build/boiii.sln
 
       - name: Upload ${{matrix.configuration}} bundle
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v2.2.4
         with:
           name: ${{matrix.configuration}} Bundle
           path: |
@@ -54,72 +54,48 @@ jobs:
 
       - name: Upload ${{matrix.configuration}} binary
         if: matrix.configuration == 'Release'
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v2.2.4
         with:
           name: ${{matrix.configuration}} Binary
           path: |
             build/bin/x64/${{matrix.configuration}}/boiii.exe
 
-      - name: Upload ${{matrix.configuration}} data artifacts
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: ${{matrix.configuration}} data artifacts
-          path: |
-            data/*
-
-      - name: Upload version
-        if: matrix.configuration == 'Release'
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: Version
-          path: |
-            build/version.txt
-
-  deploy:
-    name: Deploy artifacts
+  release:
+    name: Release
     needs: build
-    runs-on: ubuntu-latest
-    if: github.repository_owner == 'momo5502' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: windows-2022
+    if: |
+      github.repository_owner == 'your-username' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/tags/v*' # Release only on tag push
     steps:
-      - name: Setup environment
-        run: echo "BOIII_MASTER_PATH=${{ secrets.BOIII_MASTER_SSH_PATH }}" >> $GITHUB_ENV
+      - name: Checkout code
+        uses: actions/checkout@v2.4.2
 
-      #- name: Setup main environment
-      # if: github.ref == 'refs/heads/main'
-      #  run: echo "BOIII_MASTER_PATH=${{ secrets.BOIII_MASTER_SSH_PATH }}" >> $GITHUB_ENV
-
-      #- name: Setup develop environment
-      #  if: github.ref == 'refs/heads/develop'
-      #  run: echo "BOIII_MASTER_PATH=${{ secrets.BOIII_MASTER_SSH_PATH_DEV }}" >> $GITHUB_ENV
-
-      - name: Download Release binaries
-        uses: actions/download-artifact@v3.0.2
+      - name: Download build artifacts
+        uses: actions/download-artifact@v2.2.4
         with:
           name: Release Binary
+          path: build/bin/x64/Release
 
-      - name: Download Release data artifacts
-        uses: actions/download-artifact@v3.0.2
+      - name: Create a release
+        id: create_release
+        uses: actions/create-release@v1.0.6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: Release data artifacts
-          path: data
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          body: "Release of version ${{ github.ref }}"
+          draft: false
+          prerelease: false
 
-      - name: Install SSH key
-        uses: shimataro/ssh-key-action@v2.5.0
+      - name: Upload release assets
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          key: ${{ secrets.BOIII_MASTER_SSH_PRIVATE_KEY }}
-          known_hosts: "just-a-placeholder-so-we-dont-get-errors"
-
-      - name: Add known hosts
-        run: ssh-keyscan -H ${{ secrets.BOIII_MASTER_SSH_ADDRESS }} >> ~/.ssh/known_hosts
-
-      - name: Remove old data files
-        run: ssh ${{ secrets.BOIII_MASTER_SSH_USER }}@${{ secrets.BOIII_MASTER_SSH_ADDRESS }} rm -rf ${{ env.BOIII_MASTER_PATH }}/boiii/data/*
-
-      - name: Upload BOIII binary
-        run: rsync -avz boiii.exe ${{ secrets.BOIII_MASTER_SSH_USER }}@${{ secrets.BOIII_MASTER_SSH_ADDRESS }}:${{ env.BOIII_MASTER_PATH }}/boiii/
-
-      - name: Upload data files
-        run: rsync -avz ./data/ ${{ secrets.BOIII_MASTER_SSH_USER }}@${{ secrets.BOIII_MASTER_SSH_ADDRESS }}:${{ env.BOIII_MASTER_PATH }}/boiii/data/
-
-      - name: Publish changes
-        run: ssh ${{ secrets.BOIII_MASTER_SSH_USER }}@${{ secrets.BOIII_MASTER_SSH_ADDRESS }} ${{ secrets.BOIII_MASTER_SSH_CHANGE_PUBLISH_COMMAND }}
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: build/bin/x64/Release/boiii.exe
+          asset_name: boiii.exe
+          asset_content_type: application/octet-stream

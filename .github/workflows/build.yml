@@ -65,9 +65,9 @@ jobs:
     needs: build
     runs-on: windows-2022
     if: |
-      github.repository_owner == 'your-username' &&
+      github.repository_owner == 'Tamatoaa' &&
       github.event_name == 'push' &&
-      github.ref == 'refs/tags/v*' # Release only on tag push
+      github.ref == 'refs/tags/v*'
     steps:
       - name: Checkout code
         uses: actions/checkout@v2.4.2
